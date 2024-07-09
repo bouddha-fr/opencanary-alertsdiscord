@@ -1,0 +1,16 @@
+#
+# /etc/systemd/system/guanaco.service
+#
+
+[Unit]
+Description=Flask
+After=network.target
+
+[Service]
+User=root
+WorkingDirectory=/path/bot/.env
+ExecStart=/path/bot/.env/bin/python3 flask.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
