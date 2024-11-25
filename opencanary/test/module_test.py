@@ -32,8 +32,19 @@ def get_last_log():
     """
     Gets the last line from `/var/tmp/opencanary.log` as a dictionary
     """
-    with open("/var/tmp/opencanary.log", "r") as log_file:
-        return json.loads(log_file.readlines()[-1])
+    return get_last_n_logs(1)[0]
+
+
+def get_last_n_logs(n):
+    """
+    Reads the last 'n' lines from a file and returns them as a list of dictionaries.
+    """
+    with open("/var/tmp/opencanary.log", "r") as file:
+        lines = file.readlines()
+
+    last_n_lines = lines[-n:]
+    deserialized_data = [json.loads(line) for line in last_n_lines]
+    return deserialized_data
 
 
 class TestFTPModule(unittest.TestCase):
@@ -45,6 +56,16 @@ class TestFTPModule(unittest.TestCase):
 
     def setUp(self):
         self.ftp = FTP("localhost")
+
+    def test_attempted_ftp_connection(self):
+        """
+        Try to connect to the FTP service should log the connection attempt.
+        """
+        self.assertRaises(error_perm, self.ftp.login)
+        log = get_last_n_logs(2)[0]
+        self.assertEqual(log["logtype"], 2001)
+        self.assertEqual(log["dst_port"], 21)
+        self.assertEqual(log["logdata"], {})
 
     def test_anonymous_ftp(self):
         """
@@ -188,6 +209,82 @@ class TestHTTPModule(unittest.TestCase):
         )
         # Just an arbitrary image
         self.assertEqual(request.status_code, 200)
+
+    def test_unimplemented_delete_http_method(self):
+        """
+        Try sending a request with an unimplemented HTTP type (DELETE)
+        """
+        request = requests.delete("http://localhost/index.html")
+        last_log = get_last_log()
+        self.assertEqual(last_log["logtype"], 3002)
+        self.assertEqual(last_log["logdata"]["REQUEST_TYPE"], "DELETE")
+        self.assertEqual(request.status_code, 405)
+
+    def test_unimplemented_patch_http_method(self):
+        """
+        Try sending a request with an unimplemented HTTP type (PATCH)
+        """
+        request = requests.patch("http://localhost/index.html", {})
+        last_log = get_last_log()
+        self.assertEqual(last_log["logtype"], 3002)
+        self.assertEqual(last_log["logdata"]["REQUEST_TYPE"], "PATCH")
+        self.assertEqual(request.status_code, 405)
+
+    def test_unimplemented_put_http_method(self):
+        """
+        Try sending a request with an unimplemented HTTP type (PUT)
+        """
+        request = requests.put("http://localhost/index.html")
+        last_log = get_last_log()
+        self.assertEqual(last_log["logtype"], 3002)
+        self.assertEqual(last_log["logdata"]["REQUEST_TYPE"], "PUT")
+        self.assertEqual(request.status_code, 405)
+
+    def test_unimplemented_connect_http_method(self):
+        """
+        Try sending a request with an unimplemented HTTP type (CONNECT)
+        """
+        request = requests.request("CONNECT", "http://localhost/index.html")
+        last_log = get_last_log()
+        self.assertEqual(last_log["logtype"], 3002)
+        self.assertEqual(last_log["logdata"]["REQUEST_TYPE"], "CONNECT")
+        self.assertEqual(request.status_code, 405)
+
+    def test_unimplemented_trace_http_method(self):
+        """
+        Try sending a request with an unimplemented HTTP type (TRACE)
+        """
+        request = requests.request("TRACE", "http://localhost/index.html")
+        last_log = get_last_log()
+        self.assertEqual(last_log["logtype"], 3002)
+        self.assertEqual(last_log["logdata"]["REQUEST_TYPE"], "TRACE")
+        self.assertEqual(request.status_code, 405)
+
+    def test_unimplemented_head_http_method(self):
+        """
+        Try sending a request with an unimplemented HTTP type (HEAD)
+        """
+        request = requests.head("http://localhost/index.html")
+        last_log = get_last_log()
+        self.assertEqual(last_log["logtype"], 3002)
+        self.assertEqual(last_log["logdata"]["REQUEST_TYPE"], "HEAD")
+        self.assertEqual(request.status_code, 405)
+
+    def test_invalid_http_request(self):
+        """
+        Try sending a request with an invalid HTTP verb
+        """
+        request = requests.request("INVALID", "http://localhost/index.html")
+        self.assertEqual(request.status_code, 405)
+
+    def test_redirect(self):
+        """
+        Send a POST request to root to receive redirect.
+        """
+        request = requests.post("http://localhost", allow_redirects=False)
+        last_log = get_last_log()
+        self.assertEqual(request.status_code, 302)
+        self.assertEqual(last_log["logtype"], 3003)
 
 
 class TestHTTPSModule(unittest.TestCase):
@@ -386,6 +483,25 @@ class TestMySQLModule(unittest.TestCase):
         self.assertEqual(last_log["logdata"]["USERNAME"], "test_user")
         #        self.assertEqual(last_log['logdata']['PASSWORD'], "b2e5ed6a0e59f99327399ced2009338d5c0fe237")
         self.assertEqual(last_log["dst_port"], 3306)
+
+    def test_attempted_mysql_login(self):
+        """
+        Try to connect to the FTP service should log the connection attempt.
+        """
+        self.assertRaises(
+            pymysql.err.OperationalError,
+            pymysql.connect,
+            host="localhost",
+            user="anyone",
+            password="AsDAS9d103294",
+            db="invaliddb",
+            charset="utf8mb4",
+            cursorclass=pymysql.cursors.DictCursor,
+        )
+        log = get_last_n_logs(2)[0]
+        self.assertEqual(log["logtype"], 9003)
+        self.assertEqual(log["dst_port"], 3306)
+        self.assertEqual(log["logdata"], {})
 
 
 class TestRDPModule(unittest.TestCase):

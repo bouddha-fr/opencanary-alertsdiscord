@@ -3,8 +3,6 @@ import sys
 import json
 import itertools
 import string
-import subprocess
-import shutil
 import re
 from os.path import expanduser
 from pkg_resources import resource_filename
@@ -36,13 +34,6 @@ def is_docker():
     )
 
 
-def detectIPTables():
-    if shutil.which("iptables"):
-        return True
-    else:
-        return False
-
-
 SERVICE_REGEXES = {
     "ssh.version": r"(SSH-(2.0|1.5|1.99|1.0)-([!-,\-./0-~]+(:?$|\s))(?:[ -~]*)){1,253}$",
 }
@@ -54,9 +45,9 @@ class Config:
         self.__configfile = configfile
 
         files = [
-            configfile,
-            "%s/.%s" % (expanduser("~"), configfile),
             "/etc/opencanaryd/%s" % configfile,
+            "%s/.%s" % (expanduser("~"), configfile),
+            configfile,
         ]
         print(
             "** We hope you enjoy using OpenCanary. For more open source Canary goodness, head over to canarytokens.org. **"
@@ -67,14 +58,16 @@ class Config:
                     print("[-] Using config file: %s" % fname)
                     self.__config = json.load(f)
                     self.__config = expand_vars(self.__config)
+                if fname is configfile:
+                    print(
+                        "[-] Warning, making use of the configuration file in the immediate directory is not recommended! Suggested locations: %s"
+                        % ", ".join(files[:2])
+                    )
                 return
             except IOError as e:
                 print("[-] Failed to open %s for reading (%s)" % (fname, e))
             except ValueError as e:
                 print("[-] Failed to decode json from %s (%s)" % (fname, e))
-                subprocess.call(
-                    "cp -r %s /var/tmp/config-err-$(date +%%s)" % fname, shell=True
-                )
             except Exception as e:
                 print("[-] An error occurred loading %s (%s)" % (fname, e))
         if self.__config is None:
@@ -119,7 +112,7 @@ class Config:
             if len(settings) > 1:
                 services = ", ".join([s[1].split(".")[0] for s in settings])
                 errmsg = "More than one service uses this port (%s)" % services
-                for (port, setting) in settings:
+                for port, setting in settings:
                     errors.append(ConfigException(setting, errmsg))
 
         return errors
